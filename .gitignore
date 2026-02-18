@@ -1,0 +1,9 @@
+node_modules
+dist
+.DS_Store
+*.local
+.gemini
+temp_plans
+task_list.md
+implementation_plan.md
+walkthrough.md

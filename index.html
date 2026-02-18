@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Pebolim Pro | Totó Ultimate</title>
+    <!-- Modern Typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./style.css">
+</head>
+
+<body>
+    <div id="app">
+        <header class="game-header">
+            <div class="header-controls left">
+                <button id="ingame-exit-btn" class="icon-btn glass" title="Sair do Jogo">
+                    <span class="btn-icon">🏠</span>
+                </button>
+            </div>
+            <div class="score-container glass">
+                <div class="team team-p2">
+                    <span class="team-label">CPU</span>
+                    <span id="score-p2" class="score-value">0</span>
+                </div>
+                <div class="score-divider">:</div>
+                <div class="team team-p1">
+                    <span id="score-p1" class="score-value">0</span>
+                    <span class="team-label">VOCÊ</span>
+                </div>
+            </div>
+            <div class="header-controls right">
+                <button id="ingame-settings-btn" class="icon-btn glass" title="Configurações">
+                    <span class="btn-icon">⚙️</span>
+                </button>
+            </div>
+        </header>
+
+        <main id="game-container">
+            <canvas id="gameCanvas"></canvas>
+        </main>
+
+        <!-- Overlays (Moved outside main to cover header/footer) -->
+
+        <!-- Home Screen -->
+        <div id="home-screen" class="overlay">
+            <div class="home-content">
+                <div class="hero-image-container">
+                    <img src="./front.png" alt="Pebolim Pro" class="hero-image">
+                </div>
+                <h1 class="menu-title main-title">PEBOLIM PRO</h1>
+                <div class="home-menu glass">
+                    <div class="main-buttons">
+                        <button id="main-play-btn" class="primary-btn">JOGAR</button>
+                        <button id="settings-btn" class="secondary-btn">CONFIGURAÇÕES</button>
+                        <button id="how-to-play-btn" class="secondary-btn">COMO JOGAR</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Start Screen (Difficulty Selection) -->
+        <div id="start-screen" class="overlay hidden">
+            <div class="menu-card glass">
+                <button class="back-btn" id="difficulty-back-btn">←</button>
+                <h1 class="menu-title">DIFICULDADE</h1>
+                <p class="menu-subtitle">Selecione o seu desafio</p>
+                <div class="difficulty-options">
+                    <button class="diff-btn" data-diff="easy">FÁCIL</button>
+                    <button class="diff-btn active" data-diff="medium">MÉDIO</button>
+                    <button class="diff-btn" data-diff="hard">DIFÍCIL</button>
+                </div>
+                <button id="start-btn" class="primary-btn">ESTOU PRONTO!</button>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="overlay hidden">
+            <div class="menu-card glass">
+                <button class="back-btn" id="settings-back-btn">×</button>
+                <h1 class="menu-title">AJUSTES</h1>
+                <div class="settings-list">
+                    <div class="setting-item">
+                        <span>Efeitos Sonoros</span>
+                        <label class="switch">
+                            <input type="checkbox" id="sound-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <span>Vibração</span>
+                        <label class="switch">
+                            <input type="checkbox" id="vibration-toggle" checked>
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Instructions Modal -->
+        <div id="how-to-play-modal" class="overlay hidden">
+            <div class="menu-card glass scrollable">
+                <button class="back-btn" id="instructions-back-btn">×</button>
+                <h1 class="menu-title">COMO JOGAR</h1>
+                <div class="instructions-content">
+                    <div class="instruction-step">
+                        <span class="step-icon">↔️</span>
+                        <p><strong>Movimento:</strong> Arraste as barras para os lados para interceptar a bola.</p>
+                    </div>
+                    <div class="instruction-step">
+                        <span class="step-icon">⚡</span>
+                        <p><strong>Chute:</strong> Segure o botão <strong>CHUTAR</strong> (ou tecla
+                            <strong>Z</strong>) para carregar a força. Solte para disparar!
+                        </p>
+                    </div>
+                    <div class="instruction-step">
+                        <span class="step-icon">🏆</span>
+                        <p><strong>Objetivo:</strong> Marque 5 gols primeiro para vencer a partida.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Countdown Overlay -->
+        <div id="countdown-overlay" class="hidden">
+            <h1 id="countdown-text" class="countdown-display">3</h1>
+        </div>
+
+        <!-- Goal Overlay -->
+        <div id="goal-overlay" class="overlay hidden">
+            <h1 class="goal-text">GOOOOL!</h1>
+        </div>
+
+        <!-- Game Over Overlay -->
+        <div id="game-over" class="overlay hidden">
+            <div class="menu-card glass">
+                <h1 class="menu-title">FIM DE JOGO</h1>
+                <p id="winner-text" class="menu-subtitle">VOCÊ VENCEU!</p>
+                <button id="restart-btn" class="primary-btn">JOGAR NOVAMENTE</button>
+                <button id="back-to-menu-btn" class="secondary-btn">VOLTAR AO MENU</button>
+            </div>
+        </div>
+
+        <footer class="game-controls">
+            <div class="force-meter-container">
+                <div class="force-meter-label">FORÇA DO CHUTE</div>
+                <div class="force-meter glass">
+                    <div id="force-bar-fill" class="force-fill"></div>
+                </div>
+            </div>
+
+            <div id="kick-btn-container">
+                <button id="kick-btn" class="kick-button">
+                    <span class="btn-icon">⚡</span>
+                    <span class="btn-text">CHUTAR</span>
+                </button>
+            </div>
+
+            <div class="controls-hint" id="desktop-hint">
+                <p>Arraste as barras laterais • Segure <span>Z</span> para chutar</p>
+            </div>
+        </footer>
+    </div>
+    <script type="module" src="./main.js"></script>
+</body>
+
+</html>
