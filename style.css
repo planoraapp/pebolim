@@ -153,25 +153,91 @@ body {
 @media (max-width: 450px) {
     #game-container {
         margin: 5px;
-        /* Reduce margin to maximize field */
         border-radius: 4px;
+        position: relative;
     }
 
     .game-header {
-        padding: 10px 15px;
+        padding: 5px 15px;
     }
 
     .game-controls {
-        padding: 10px 15px;
+        display: none;
+        /* Reclaim space for field */
     }
 
-    .score-container {
-        padding: 5px 10px;
-        gap: 8px;
+    #kick-btn-container {
+        display: block !important;
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        z-index: 1000;
     }
 
-    .score-value {
+    .kick-button {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        padding: 0;
+        background: rgba(255, 30, 30, 0.4);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+
+    .kick-button .btn-text {
+        display: none;
+    }
+
+    .kick-button .btn-icon {
         font-size: 2rem;
+        z-index: 2;
+    }
+
+    .circular-progress {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        transform: rotate(-90deg);
+        z-index: 1;
+    }
+
+    .circular-progress circle {
+        fill: none;
+        stroke-width: 6;
+        stroke-linecap: round;
+    }
+
+    .circular-progress .bg {
+        stroke: rgba(255, 255, 255, 0.1);
+    }
+
+    .circular-progress .progress {
+        stroke: #ffeb3b;
+        stroke-dasharray: 283;
+        stroke-dashoffset: 283;
+        transition: stroke-dashoffset 0.05s linear;
+    }
+
+    .kick-button.full-charge {
+        background: rgba(255, 235, 59, 0.4);
+        box-shadow: 0 0 30px rgba(255, 235, 59, 0.6);
+        animation: glowPulse 1s infinite alternate;
+    }
+
+    @keyframes glowPulse {
+        from {
+            box-shadow: 0 0 15px rgba(255, 235, 59, 0.4);
+        }
+
+        to {
+            box-shadow: 0 0 35px rgba(255, 235, 59, 0.8);
+        }
     }
 }
 

@@ -61,6 +61,8 @@ const gameOverScreen = document.getElementById('game-over');
 const winnerText = document.getElementById('winner-text');
 const scoreP1El = document.getElementById('score-p1');
 const scoreP2El = document.getElementById('score-p2');
+const chargeIndicator = document.getElementById('charge-indicator');
+const kickBtnContainer = document.getElementById('kick-btn-container');
 
 // New Screens & Modals
 const homeScreen = document.getElementById('home-screen');
@@ -313,8 +315,22 @@ function update() {
         }
 
         // Sync Force Meter UI with dragged rod or active charging rod
-        if (state.draggedRod === rod && forceBarFill) {
-            forceBarFill.style.width = `${rod.kickCharge}%`;
+        if (state.draggedRod === rod) {
+            if (forceBarFill) forceBarFill.style.width = `${rod.kickCharge}%`;
+
+            // Circular Progress Logic
+            if (chargeIndicator) {
+                const circumference = 2 * Math.PI * 45; // r=45
+                const offset = circumference - (rod.kickCharge / 100) * circumference;
+                chargeIndicator.style.strokeDashoffset = offset;
+
+                if (rod.kickCharge >= 100) {
+                    kickBtn.classList.add('full-charge');
+                    if (window.navigator.vibrate) window.navigator.vibrate(10);
+                } else {
+                    kickBtn.classList.remove('full-charge');
+                }
+            }
         }
 
         // Apply Angular Velocity & Smoothing
