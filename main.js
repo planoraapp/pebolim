@@ -131,13 +131,22 @@ function resize() {
     const pW = parent.clientWidth;
     const pH = parent.clientHeight;
 
-    const targetRatio = 4 / 7;
+    // Fixed width based on parent, but let height be more flexible on mobile
     let w = pW;
-    let h = w / targetRatio;
+    let h = pH;
 
-    if (h > pH) {
-        h = pH;
-        w = h * targetRatio;
+    // Minimum aspect ratio (portrait) - 4/7 is standard, but we can go taller
+    const minRatio = 4 / 8; // Very tall
+    const maxRatio = 4 / 6; // Squatter but still portrait
+
+    let currentRatio = w / h;
+
+    if (currentRatio < minRatio) {
+        // Too tall, cap it
+        h = w / minRatio;
+    } else if (currentRatio > maxRatio) {
+        // Too wide, cap it
+        w = h * maxRatio;
     }
 
     canvas.width = w;
