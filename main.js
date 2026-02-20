@@ -1,6 +1,7 @@
 /**
  * Pebolim Pro - Game Logic
  */
+// import { io } from "socket.io-client"; // Comentado pois o backend será implementado depois
 
 // Configuration & Constants
 const CONFIG = {
@@ -27,6 +28,8 @@ const CONFIG = {
 // Game States
 const GSTATE = {
     MENU: 'MENU',
+    MODE_SELECT: 'MODE_SELECT',
+    MATCHMAKING: 'MATCHMAKING',
     PLAYING: 'PLAYING',
     GAMEOVER: 'GAMEOVER'
 };
@@ -34,19 +37,87 @@ const GSTATE = {
 // Global State
 const state = {
     mode: GSTATE.MENU,
+    isPVP: false,
+    playerRole: 'p1', // 'p1' (Bottom) or 'p2' (Top)
+    roomId: null,
     difficulty: 'medium',
     width: 400,
     height: 700,
-    scoreP1: 0, // Blue (Bottom) - User
-    scoreP2: 0, // Red (Top) - CPU
+    scoreP1: 0, // Blue (Bottom)
+    scoreP2: 0, // Red (Top)
     draggedRod: null,
     dragOffsetX: 0,
     particles: [],
+    cpuWaitUntil: 0,
     settings: {
         sound: true,
         vibration: true
     }
 };
+
+// Simulador de Rede para desenvolvimento sem Backend
+class NetworkSimulator {
+    constructor() {
+        this.onHandlers = {};
+        this.mockOpponentInterval = null;
+    }
+    on(event, handler) {
+        this.onHandlers[event] = handler;
+    }
+    emit(event, data) {
+        // console.log(`[NetworkSim] Emit: ${event}`, data);
+
+        if (event === 'joinQueue') {
+            // Simula tempo de busca de 2 a 4 segundos
+            setTimeout(() => {
+                const role = Math.random() > 0.5 ? 'p1' : 'p2';
+                this.onHandlers['matchFound']?.({
+                    roomId: 'sim_room_' + Math.floor(Math.random() * 1000),
+                    playerRole: role
+                });
+                this.startMockingOpponent(role);
+            }, 2000 + Math.random() * 2000);
+        }
+
+        if (event === 'goal' && this.onHandlers['remoteGoal']) {
+            // Simula o delay do servidor ao confirmar o gol
+            setTimeout(() => {
+                // No simulador, apenas aceitamos o que enviamos
+            }, 100);
+        }
+    }
+
+    // Simula um oponente movendo as barras aleatoriamente
+    startMockingOpponent(myRole) {
+        if (this.mockOpponentInterval) clearInterval(this.mockOpponentInterval);
+
+        this.mockOpponentInterval = setInterval(() => {
+            if (state.mode !== GSTATE.PLAYING) return;
+
+            const remoteRods = rods.map((r, i) => {
+                const isMyRod = (myRole === 'p1' && r.team === 0) || (myRole === 'p2' && r.team === 1);
+                if (!isMyRod) {
+                    // Simula movimento suave do oponente
+                    return {
+                        currentX: r.currentX + (Math.random() - 0.5) * 10,
+                        angle: Math.sin(Date.now() / 200) * 0.5,
+                        kickCharge: Math.random() > 0.95 ? 100 : 0
+                    };
+                }
+                return { currentX: r.currentX, angle: r.angle, kickCharge: r.kickCharge };
+            });
+
+            this.onHandlers['remoteState']?.({
+                roomId: state.roomId,
+                rods: remoteRods,
+                ball: myRole === 'p2' ? ball : null // Se eu sou P2, o P1 simulado envia a bola
+            });
+        }, 50);
+    }
+}
+
+const socket = new NetworkSimulator();
+// const socket = io("http://localhost:3001"); // Use esta linha quando o backend estiver pronto
 
 // Elements
 const canvas = document.getElementById('gameCanvas');
@@ -66,6 +137,8 @@ const kickBtnContainer = document.getElementById('kick-btn-container');
 
 // New Screens & Modals
 const homeScreen = document.getElementById('home-screen');
+const modeScreen = document.getElementById('mode-screen');
+const matchmakingScreen = document.getElementById('matchmaking-screen');
 const settingsModal = document.getElementById('settings-modal');
 const howToPlayModal = document.getElementById('how-to-play-modal');
 const soundToggle = document.getElementById('sound-toggle');
@@ -169,21 +242,19 @@ function resetBall(scorerTeam) {
         return;
     }
 
-    ball.x = state.width / 2;
-    ball.y = state.height / 2;
+    // Stop and hide ball temporarily
     ball.vx = 0;
     ball.vy = 0;
+    ball.x = -100;
 
     goalOverlay.classList.remove('hidden');
     playSound(440, 'square', 0.3, 0.15); // Goal sound
 
     setTimeout(() => {
-        if (state.mode !== GSTATE.PLAYING) return;
+        if (state.mode === GSTATE.GAMEOVER) return;
         goalOverlay.classList.add('hidden');
-        const dirY = scorerTeam === 0 ? -1 : 1;
-        ball.vy = dirY * (3 + Math.random() * 2);
-        ball.vx = (Math.random() - 0.5) * 4;
-    }, 1500);
+        startCountdown();
+    }, 2000);
 }
 
 function endGame() {
@@ -191,6 +262,9 @@ function endGame() {
     gameOverScreen.classList.remove('hidden');
     winnerText.textContent = state.scoreP1 >= CONFIG.winScore ? "VOCÊ VENCEU!" : "DERROTA!";
     winnerText.style.color = state.scoreP1 >= CONFIG.winScore ? CONFIG.colors.p1 : CONFIG.colors.p2;
+
+    // Hide kick button on game over
+    if (kickBtnContainer) kickBtnContainer.style.display = 'none';
 }
 
 function getPlayerPositions(rod) {
@@ -208,21 +282,25 @@ function getPlayerPositions(rod) {
 function update() {
     if (state.mode !== GSTATE.PLAYING) return;
 
-    // Ball Movement
-    ball.x += ball.vx;
-    ball.y += ball.vy;
-    ball.vx *= CONFIG.friction;
-    ball.vy *= CONFIG.friction;
+    // Ball Movement - Only if NOT PVP or if we are P1 (Authority)
+    if (!state.isPVP || state.playerRole === 'p1') {
+        ball.x += ball.vx;
+        ball.y += ball.vy;
+        ball.vx *= CONFIG.friction;
+        ball.vy *= CONFIG.friction;
+    }
 
     // Boundary Collisions (Walls)
-    if (ball.x - ball.radius < 0) {
-        ball.x = ball.radius;
-        ball.vx *= -CONFIG.wallBounce;
-        playSound(200, 'sine', 0.05, 0.05);
-    } else if (ball.x + ball.radius > state.width) {
-        ball.x = state.width - ball.radius;
-        ball.vx *= -CONFIG.wallBounce;
-        playSound(200, 'sine', 0.05, 0.05);
+    if (!state.isPVP || state.playerRole === 'p1') {
+        if (ball.x - ball.radius < 0) {
+            ball.x = ball.radius;
+            ball.vx *= -CONFIG.wallBounce;
+            playSound(200, 'sine', 0.05, 0.05);
+        } else if (ball.x + ball.radius > state.width) {
+            ball.x = state.width - ball.radius;
+            ball.vx *= -CONFIG.wallBounce;
+            playSound(200, 'sine', 0.05, 0.05);
+        }
     }
 
     // Goal & Edge Detection
@@ -234,10 +312,17 @@ function update() {
     if (ball.y - ball.radius < 0) {
         if (ball.x > goalXStart && ball.x < goalXEnd) {
             // GOAL for P1
+            // In PvP, only P1 detects and emits goals
+            if (state.isPVP && state.playerRole !== 'p1') return;
+
             state.scoreP1++;
             scoreP1El.textContent = state.scoreP1;
             createParticles(ball.x, 0, CONFIG.colors.p1);
             resetBall(0);
+
+            if (state.isPVP && state.playerRole === 'p1') {
+                socket.emit("goal", { roomId: state.roomId, scorerTeam: 0, scoreP1: state.scoreP1, scoreP2: state.scoreP2 });
+            }
         } else {
             // WALL BOUNCE (Top left or top right edge)
             ball.y = ball.radius;
@@ -249,10 +334,16 @@ function update() {
     else if (ball.y + ball.radius > state.height) {
         if (ball.x > goalXStart && ball.x < goalXEnd) {
             // GOAL for P2
+            if (state.isPVP && state.playerRole !== 'p1') return;
+
             state.scoreP2++;
             scoreP2El.textContent = state.scoreP2;
             createParticles(ball.x, state.height, CONFIG.colors.p2);
             resetBall(1);
+
+            if (state.isPVP && state.playerRole === 'p1') {
+                socket.emit("goal", { roomId: state.roomId, scorerTeam: 1, scoreP1: state.scoreP1, scoreP2: state.scoreP2 });
+            }
         } else {
             // WALL BOUNCE (Bottom left or bottom right edge)
             ball.y = state.height - ball.radius;
@@ -264,8 +355,15 @@ function update() {
     // Rods & AI
     const diff = CONFIG.difficulty[state.difficulty];
     rods.forEach(rod => {
-        // AI Logic (CPU)
-        if (rod.team === 1) {
+        // AI Logic (CPU) - Only if NOT PVP
+        if (!state.isPVP && rod.team === 1) {
+            // Reaction Delay: Skip tracking if ball was just launched
+            if (Date.now() < state.cpuWaitUntil) {
+                rod.targetAngle = 0;
+                rod.isCharging = false;
+                return;
+            }
+
             let targetX = ball.x;
             const distY = ball.y - rod.y;
             const distX = ball.x - rod.currentX;
@@ -299,7 +397,22 @@ function update() {
         rod.currentX = Math.max(rod.minX, Math.min(rod.maxX, rod.currentX));
 
         // Angular Physics
-        if (rod.team === 0) {
+        if (state.isPVP) {
+            const myTeam = state.playerRole === 'p1' ? 0 : 1;
+            if (rod.team === myTeam) {
+                if (rod.isCharging) {
+                    rod.kickCharge += 2.5;
+                    if (rod.kickCharge > 100) rod.kickCharge = 100;
+                    rod.targetAngle = -Math.PI / 2.5;
+                } else if (rod.isReleasing) {
+                    rod.angVel = 1.2 + (rod.kickCharge / 40);
+                    rod.isReleasing = false;
+                    setTimeout(() => { if (!rod.isCharging) rod.kickCharge = 0; }, 100);
+                } else {
+                    rod.targetAngle = 0;
+                }
+            }
+        } else if (rod.team === 0) {
             if (rod.isCharging) {
                 rod.kickCharge += 2.5;
                 if (rod.kickCharge > 100) rod.kickCharge = 100;
@@ -340,6 +453,11 @@ function update() {
         rod.angVel *= 0.85; // Friction
 
         // Player Collisions
+        if (state.isPVP && state.playerRole !== 'p1') {
+            // Non-authority only does visual rotation/movement, not collision
+            return;
+        }
+
         const players = getPlayerPositions(rod);
 
         // LIFT-TO-PASS: If rod is rotated too much, ball passes under
@@ -391,20 +509,26 @@ function update() {
     });
 
     // Dead Zone Check (Prevent stuck ball) - Once per update
-    const ballSpeed = Math.abs(ball.vx) + Math.abs(ball.vy);
-    if (ballSpeed < 0.2) {
-        if (!state.stuckTimer) state.stuckTimer = Date.now();
-        if (Date.now() - state.stuckTimer > 3000) {
-            // Reset ball to center if stationary for 3 seconds
-            ball.x = state.width / 2;
-            ball.y = state.height / 2;
-            ball.vx = 0;
-            ball.vy = 0;
+    if (!state.isPVP || state.playerRole === 'p1') {
+        const ballSpeed = Math.abs(ball.vx) + Math.abs(ball.vy);
+        if (ballSpeed < 0.2) {
+            if (!state.stuckTimer) state.stuckTimer = Date.now();
+            if (Date.now() - state.stuckTimer > 3000) {
+                // Reset ball to center if stationary for 3 seconds
+                ball.x = state.width / 2;
+                ball.y = state.height / 2;
+                ball.vx = 0;
+                ball.vy = 0;
+                state.stuckTimer = null;
+                playSound(300, 'sine', 0.1, 0.05);
+
+                if (state.isPVP && state.playerRole === 'p1') {
+                    socket.emit("syncState", { roomId: state.roomId, ball });
+                }
+            }
+        } else {
             state.stuckTimer = null;
-            playSound(300, 'sine', 0.1, 0.05);
         }
-    } else {
-        state.stuckTimer = null;
     }
 
     // Update Particles
@@ -600,6 +724,17 @@ function startGame() {
     homeScreen.classList.add('hidden');
     gameOverScreen.classList.add('hidden');
 
+    // Update UI Labels
+    const teamP2Label = document.querySelector('.team-p2 .team-label');
+    const teamP1Label = document.querySelector('.team-p1 .team-label');
+    if (state.isPVP) {
+        teamP2Label.textContent = state.playerRole === 'p1' ? "PLAYER 2" : "VOCÊ";
+        teamP1Label.textContent = state.playerRole === 'p1' ? "VOCÊ" : "PLAYER 1";
+    } else {
+        teamP2Label.textContent = "CPU";
+        teamP1Label.textContent = "VOCÊ";
+    }
+
     // Reset Scores
     state.scoreP1 = 0;
     state.scoreP2 = 0;
@@ -613,10 +748,15 @@ function startGame() {
     ball.vy = 0;
 
     startCountdown();
+
+    // Show kick button when starting the game
+    if (kickBtnContainer) kickBtnContainer.style.display = 'block';
 }
 
 function startCountdown() {
     state.mode = GSTATE.MENU; // Keep game paused (don't process update)
+    ball.x = -100; // Keep ball off-screen during countdown
+
     countdownOverlay.classList.remove('hidden');
 
     let count = 3;
@@ -634,19 +774,116 @@ function startCountdown() {
         } else {
             clearInterval(interval);
             countdownOverlay.classList.add('hidden');
-            state.mode = GSTATE.PLAYING;
-            // Kickoff ball
-            ball.vy = -(3 + Math.random() * 2);
-            ball.vx = (Math.random() - 0.5) * 4;
+            launchBall();
         }
     }, 1000);
+}
+
+/**
+ * Realistic Ball Launch from the sideBoards (central line)
+ */
+function launchBall() {
+    state.mode = GSTATE.PLAYING;
+
+    // Determine side (Left: 0, Right: 1)
+    const fromLeft = Math.random() > 0.5;
+
+    // Set position at side edge, middle height
+    ball.x = fromLeft ? -ball.radius : state.width + ball.radius;
+    ball.y = state.height / 2;
+
+    // Set velocity: towards the center, slow but random
+    // vx: positive if fromLeft, negative if fromRight
+    ball.vx = fromLeft ? (2 + Math.random() * 2) : -(2 + Math.random() * 2);
+    // vy: slight random vertical drift
+    ball.vy = (Math.random() - 0.5) * 4;
+
+    // Sync Ball if P1 in PvP
+    if (state.isPVP && state.playerRole === 'p1') {
+        socket.emit("syncState", { roomId: state.roomId, ball });
+    }
+
+    // Set CPU reaction delay (0.8s to 1.5s)
+    state.cpuWaitUntil = Date.now() + 800 + Math.random() * 700;
+
+    playSound(600, 'sine', 0.1, 0.1); // "Whistle" or launch sound
 }
 
 // Event Listeners
 document.getElementById('main-play-btn').addEventListener('click', () => {
     homeScreen.classList.add('hidden');
-    startScreen.classList.remove('hidden');
+    modeScreen.classList.remove('hidden');
+    state.mode = GSTATE.MODE_SELECT;
     playSound(400, 'sine', 0.05, 0.05);
+});
+
+document.getElementById('mode-back-btn').addEventListener('click', () => {
+    modeScreen.classList.add('hidden');
+    homeScreen.classList.remove('hidden');
+    state.mode = GSTATE.MENU;
+    playSound(300, 'sine', 0.05, 0.05);
+});
+
+document.getElementById('play-cpu-btn').addEventListener('click', () => {
+    modeScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+    state.isPVP = false;
+    playSound(400, 'sine', 0.05, 0.05);
+});
+
+document.getElementById('play-pvp-btn').addEventListener('click', () => {
+    modeScreen.classList.add('hidden');
+    matchmakingScreen.classList.remove('hidden');
+    state.mode = GSTATE.MATCHMAKING;
+    state.isPVP = true;
+    socket.emit("joinQueue");
+    playSound(400, 'sine', 0.05, 0.05);
+});
+
+document.getElementById('cancel-matchmaking-btn').addEventListener('click', () => {
+    matchmakingScreen.classList.add('hidden');
+    modeScreen.classList.remove('hidden');
+    state.mode = GSTATE.MODE_SELECT;
+    // For simplicity, we just reload or we could implement a cancelQueue on server
+    location.reload();
+});
+
+// Socket Listeners
+socket.on("matchFound", (data) => {
+    state.roomId = data.roomId;
+    state.playerRole = data.playerRole;
+    matchmakingScreen.classList.add('hidden');
+    startGame();
+});
+
+socket.on("remoteState", (data) => {
+    // Update remote rods
+    data.rods.forEach((remoteRod, index) => {
+        const rod = rods[index];
+        // Only update rods that are NOT owned by the local player
+        if ((state.playerRole === 'p1' && rod.team === 1) ||
+            (state.playerRole === 'p2' && rod.team === 0)) {
+            rod.currentX = remoteRod.currentX;
+            rod.angle = remoteRod.angle;
+            rod.kickCharge = remoteRod.kickCharge;
+        }
+    });
+
+    // If we are not the authoritative player (P2), update ball from P1
+    if (state.playerRole === 'p2' && data.ball) {
+        ball.x = data.ball.x;
+        ball.y = data.ball.y;
+        ball.vx = data.ball.vx;
+        ball.vy = data.ball.vy;
+    }
+});
+
+socket.on("remoteGoal", (data) => {
+    state.scoreP1 = data.scoreP1;
+    state.scoreP2 = data.scoreP2;
+    scoreP1El.textContent = state.scoreP1;
+    scoreP2El.textContent = state.scoreP2;
+    resetBall(data.scorerTeam);
 });
 
 document.getElementById('difficulty-back-btn').addEventListener('click', () => {
@@ -688,6 +925,9 @@ document.getElementById('ingame-exit-btn').addEventListener('click', () => {
         state.mode = GSTATE.MENU;
         homeScreen.classList.remove('hidden');
         playSound(300, 'sine', 0.05, 0.05);
+
+        // Hide kick button on exit
+        if (kickBtnContainer) kickBtnContainer.style.display = 'none';
     }
 });
 
@@ -725,12 +965,19 @@ function handleStart(e) {
     let bestRod = null;
     let minDist = 40;
     rods.forEach(rod => {
-        if (rod.team === 0) {
-            const d = Math.abs(y - rod.y);
-            if (d < minDist) {
-                minDist = d;
-                bestRod = rod;
-            }
+        // In PVP, you can only move your own rods
+        if (state.isPVP) {
+            const myTeam = state.playerRole === 'p1' ? 0 : 1;
+            if (rod.team !== myTeam) return;
+        } else {
+            // In CPU mode, you always control blue (team 0)
+            if (rod.team !== 0) return;
+        }
+
+        const d = Math.abs(y - rod.y);
+        if (d < minDist) {
+            minDist = d;
+            bestRod = rod;
         }
     });
 
@@ -796,6 +1043,20 @@ window.addEventListener('resize', resize);
 function loop() {
     update();
     draw();
+
+    // Sync State in PVP
+    if (state.isPVP && state.roomId) {
+        socket.emit("syncState", {
+            roomId: state.roomId,
+            rods: rods.map(r => ({
+                currentX: r.currentX,
+                angle: r.angle,
+                kickCharge: r.kickCharge
+            })),
+            ball: state.playerRole === 'p1' ? ball : null // Only P1 sends ball position
+        });
+    }
+
     requestAnimationFrame(loop);
 }
 

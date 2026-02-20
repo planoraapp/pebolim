@@ -162,16 +162,14 @@ body {
     }
 
     .game-controls {
-        display: none;
-        /* Reclaim space for field */
+        display: flex;
+        padding: 10px 15px;
     }
 
     #kick-btn-container {
-        display: block !important;
-        position: absolute;
-        bottom: 20px;
-        right: 20px;
-        z-index: 1000;
+        position: static;
+        display: none;
+        /* Controlled by JS */
     }
 
     .kick-button {
@@ -179,15 +177,14 @@ body {
         height: 80px;
         border-radius: 50%;
         padding: 0;
-        background: rgba(255, 30, 30, 0.4);
+        background: transparent;
         backdrop-filter: blur(4px);
         -webkit-backdrop-filter: blur(4px);
-        border: 2px solid rgba(255, 255, 255, 0.2);
+        border: 2px solid rgba(255, 255, 255, 0.1);
         display: flex;
         align-items: center;
         justify-content: center;
         position: relative;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
     }
 
     .kick-button .btn-text {
@@ -209,7 +206,7 @@ body {
 
     .circular-progress circle {
         fill: none;
-        stroke-width: 6;
+        stroke-width: 8;
         stroke-linecap: round;
     }
 
@@ -219,6 +216,7 @@ body {
 
     .circular-progress .progress {
         stroke: #ffeb3b;
+        filter: drop-shadow(0 0 5px rgba(255, 235, 59, 0.8));
         stroke-dasharray: 283;
         stroke-dashoffset: 283;
         transition: stroke-dashoffset 0.05s linear;
@@ -258,6 +256,13 @@ canvas {
 }
 
 .force-meter-container {
+    flex: 1;
+}
+
+.footer-main-row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
     width: 100%;
 }
 
@@ -285,11 +290,11 @@ canvas {
 }
 
 .kick-button {
-    width: 100%;
-    padding: 16px;
-    border-radius: 16px;
-    border: none;
-    background: linear-gradient(135deg, #ff3b30, #af1d1d);
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    background: transparent;
     color: white;
     font-family: inherit;
     font-weight: 900;
@@ -299,8 +304,19 @@ canvas {
     justify-content: center;
     gap: 10px;
     cursor: pointer;
-    box-shadow: 0 4px 15px rgba(175, 29, 29, 0.4);
     transition: transform 0.1s, filter 0.1s;
+    position: relative;
+}
+
+#kick-btn-container {
+    z-index: 1000;
+    display: none;
+    flex-shrink: 0;
+    /* Hidden by default, shown via JS */
+}
+
+.kick-button .btn-text {
+    display: none;
 }
 
 .kick-button:active {
@@ -670,5 +686,28 @@ input:checked+.slider:before {
 @media (hover: hover) {
     #kick-btn-container {
         display: none;
+    }
+}
+
+/* Loader */
+.loader {
+    width: 48px;
+    height: 48px;
+    border: 5px solid #FFF;
+    border-bottom-color: #0088ff;
+    border-radius: 50%;
+    display: inline-block;
+    box-sizing: border-box;
+    animation: rotation 1s linear infinite;
+    margin-bottom: 20px;
+}
+
+@keyframes rotation {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
     }
 }
