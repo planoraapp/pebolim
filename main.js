@@ -1,7 +1,6 @@
 /**
  * Pebolim Pro - Game Logic
  */
-// import { io } from "socket.io-client"; // Comentado pois o backend será implementado depois
 
 // Configuration & Constants
 const CONFIG = {
@@ -22,7 +21,11 @@ const CONFIG = {
         medium: { aiSpeed: 0.1, aiRange: 0.4 },
         hard: { aiSpeed: 0.18, aiRange: 0.6 }
     },
-    liftThreshold: 0.7 // ~40 degrees, angle at which players lift legs enough for ball to pass
+    liftThreshold: 0.7,
+    // Field Area Configuration (Matching the tableframe transparent hole)
+    offsetTopPct: 0.20, // 20% from top is wood
+    offsetBottomPct: 0.25, // 25% from bottom is wood
+    sideMarginPct: 0.10 // 10% from sides is wood
 };
 
 // Game States
@@ -49,6 +52,7 @@ const state = {
     dragOffsetX: 0,
     particles: [],
     cpuWaitUntil: 0,
+    activeRodTouchId: null, // Tracks the touch ID for rod movement
     settings: {
         sound: true,
         vibration: true
@@ -61,14 +65,9 @@ class NetworkSimulator {
         this.onHandlers = {};
         this.mockOpponentInterval = null;
     }
-    on(event, handler) {
-        this.onHandlers[event] = handler;
-    }
+    on(event, handler) { this.onHandlers[event] = handler; }
     emit(event, data) {
-        // console.log(`[NetworkSim] Emit: ${event}`, data);
-
         if (event === 'joinQueue') {
-            // Simula tempo de busca de 2 a 4 segundos
             setTimeout(() => {
                 const role = Math.random() > 0.5 ? 'p1' : 'p2';
                 this.onHandlers['matchFound']?.({
@@ -78,26 +77,14 @@ class NetworkSimulator {
                 this.startMockingOpponent(role);
             }, 2000 + Math.random() * 2000);
         }
-
-        if (event === 'goal' && this.onHandlers['remoteGoal']) {
-            // Simula o delay do servidor ao confirmar o gol
-            setTimeout(() => {
-                // No simulador, apenas aceitamos o que enviamos
-            }, 100);
-        }
     }
-
-    // Simula um oponente movendo as barras aleatoriamente
     startMockingOpponent(myRole) {
         if (this.mockOpponentInterval) clearInterval(this.mockOpponentInterval);
-
         this.mockOpponentInterval = setInterval(() => {
             if (state.mode !== GSTATE.PLAYING) return;
-
             const remoteRods = rods.map((r, i) => {
                 const isMyRod = (myRole === 'p1' && r.team === 0) || (myRole === 'p2' && r.team === 1);
                 if (!isMyRod) {
-                    // Simula movimento suave do oponente
                     return {
                         currentX: r.currentX + (Math.random() - 0.5) * 10,
                         angle: Math.sin(Date.now() / 200) * 0.5,
@@ -106,18 +93,16 @@ class NetworkSimulator {
                 }
                 return { currentX: r.currentX, angle: r.angle, kickCharge: r.kickCharge };
             });
-
             this.onHandlers['remoteState']?.({
                 roomId: state.roomId,
                 rods: remoteRods,
-                ball: myRole === 'p2' ? ball : null // Se eu sou P2, o P1 simulado envia a bola
+                ball: myRole === 'p2' ? ball : null
             });
         }, 50);
     }
 }
 
 const socket = new NetworkSimulator();
-// const socket = io("http://localhost:3001"); // Use esta linha quando o backend estiver pronto
 
 // Elements
 const canvas = document.getElementById('gameCanvas');
@@ -143,6 +128,10 @@ const settingsModal = document.getElementById('settings-modal');
 const howToPlayModal = document.getElementById('how-to-play-modal');
 const soundToggle = document.getElementById('sound-toggle');
 const vibrationToggle = document.getElementById('vibration-toggle');
+
+// Assets
+const playerImg = new Image();
+playerImg.src = './player.jpg';
 
 // Audio Context (Lazy initialized)
 let audioCtx = null;
@@ -171,27 +160,30 @@ const ball = {
     color: '#ffffff'
 };
 
-/**
- * Rods Configuration
- */
+// Updated Rods Configuration - Distributed within the visible area
 const rods = [
-    { yPct: 0.05, players: 1, team: 1, limit: 0.3, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // CPU Goalie
-    { yPct: 0.15, players: 2, team: 1, limit: 0.3, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // CPU Defense
-    { yPct: 0.30, players: 3, team: 0, limit: 0.2, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // P1 Attack
-    { yPct: 0.45, players: 4, team: 1, limit: 0.15, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // CPU Midfield
+    { yVisiblePct: 0.05, players: 1, team: 1, limit: 0.3, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // CPU Goalie
+    { yVisiblePct: 0.15, players: 2, team: 1, limit: 0.3, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // CPU Defense
+    { yVisiblePct: 0.32, players: 3, team: 0, limit: 0.2, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // P1 Attack
+    { yVisiblePct: 0.42, players: 4, team: 1, limit: 0.15, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // CPU Midfield
 
-    { yPct: 0.55, players: 4, team: 0, limit: 0.15, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // P1 Midfield
-    { yPct: 0.70, players: 3, team: 1, limit: 0.2, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // CPU Attack
-    { yPct: 0.85, players: 2, team: 0, limit: 0.3, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // P1 Defense
-    { yPct: 0.95, players: 1, team: 0, limit: 0.3, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }  // P1 Goalie
+    { yVisiblePct: 0.58, players: 4, team: 0, limit: 0.15, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // P1 Midfield
+    { yVisiblePct: 0.68, players: 3, team: 1, limit: 0.2, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // CPU Attack
+    { yVisiblePct: 0.85, players: 2, team: 0, limit: 0.3, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }, // P1 Defense
+    { yVisiblePct: 0.95, players: 1, team: 0, limit: 0.3, angle: 0, targetAngle: 0, angVel: 0, kickCharge: 0, isCharging: false, isReleasing: false }  // P1 Goalie
 ];
 
 function initRods() {
+    const top = state.height * CONFIG.offsetTopPct;
+    const availableH = state.height * (1 - CONFIG.offsetTopPct - CONFIG.offsetBottomPct);
+    const left = state.width * CONFIG.sideMarginPct;
+    const availableW = state.width * (1 - CONFIG.sideMarginPct * 2);
+
     rods.forEach(rod => {
-        rod.y = state.height * rod.yPct;
-        rod.minX = state.width * rod.limit;
-        rod.maxX = state.width * (1 - rod.limit);
-        rod.currentX = state.width / 2;
+        rod.y = top + (availableH * rod.yVisiblePct);
+        rod.minX = left + (availableW * rod.limit);
+        rod.maxX = left + (availableW * (1 - rod.limit));
+        rod.currentX = left + availableW / 2;
         rod.angle = 0;
         rod.targetAngle = 0;
         rod.angVel = 0;
@@ -203,26 +195,8 @@ function initRods() {
 
 function resize() {
     const parent = canvas.parentElement;
-    const pW = parent.clientWidth;
-    const pH = parent.clientHeight;
-
-    // Fixed width based on parent, but let height be more flexible on mobile
-    let w = pW;
-    let h = pH;
-
-    // Minimum aspect ratio (portrait) - 4/7 is standard, but we can go taller
-    const minRatio = 4 / 8; // Very tall
-    const maxRatio = 4 / 6; // Squatter but still portrait
-
-    let currentRatio = w / h;
-
-    if (currentRatio < minRatio) {
-        // Too tall, cap it
-        h = w / minRatio;
-    } else if (currentRatio > maxRatio) {
-        // Too wide, cap it
-        w = h * maxRatio;
-    }
+    const w = parent.clientWidth;
+    const h = parent.clientHeight;
 
     canvas.width = w;
     canvas.height = h;
@@ -628,55 +602,64 @@ function draw() {
             ctx.ellipse(4, 4 + Math.sin(rod.angle) * 5, size * 0.8, size * 1.2, 0, 0, Math.PI * 2);
             ctx.fill();
 
-            // --- DRAW PLAYER FIGURE ---
-            // The "T-Pose" arms are theoretically the rod itself.
+            if (rod.team === 1 && playerImg.complete) {
+                // RED TEAM (Top View Mock)
+                const viewW = size * 2.5;
+                const bodyH = size * 3;
+                const viewH = Math.cos(rod.angle) * bodyH;
 
-            // 1. Torso/Body (Rectangular)
-            // We use COS for the vertical length to simulate rotation
-            const bodyH = size * 1.8;
-            const viewH = Math.cos(rod.angle) * bodyH;
-            const viewW = size * 1.2;
+                // Render the image
+                // If viewH is negative, the image is rotated "away" (upside down)
+                ctx.drawImage(playerImg, -viewW / 2, 0, viewW, viewH);
 
-            ctx.fillStyle = teamColor;
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 1;
+                // Add a subtle red tint or border to identify team if image isn't red enough
+                ctx.strokeStyle = CONFIG.colors.p2;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(-viewW / 2, 0, viewW, viewH);
+            } else {
+                // BLUE TEAM or Fallback (Procedural)
+                const teamColor = rod.team === 0 ? CONFIG.colors.p1 : CONFIG.colors.p2;
 
-            // Draw Body
-            ctx.fillRect(-viewW / 2, 0, viewW, viewH);
-            ctx.strokeRect(-viewW / 2, 0, viewW, viewH);
+                // 1. Torso/Body (Rectangular)
+                const bodyH = size * 1.8;
+                const viewH = Math.cos(rod.angle) * bodyH;
+                const viewW = size * 1.2;
 
-            // 2. Head (Always above the rod, slightly shifting)
-            ctx.beginPath();
-            ctx.arc(0, -size * 0.8, size * 0.7, 0, Math.PI * 2);
-            const headGrad = ctx.createRadialGradient(-2, -size * 1, 1, 0, -size * 0.8, size * 0.7);
-            headGrad.addColorStop(0, teamColor);
-            headGrad.addColorStop(1, '#000');
-            ctx.fillStyle = headGrad;
-            ctx.fill();
-            ctx.stroke();
+                ctx.fillStyle = teamColor;
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 1;
 
-            // 3. Foot/Leg (The part that actually hits the ball)
-            // It extends from the body.
-            const footLen = size * 1.2;
-            const footY = viewH; // Starts where body ends
-            const footScaleY = Math.cos(rod.angle);
-            const footH = footLen * footScaleY;
+                // Draw Body
+                ctx.fillRect(-viewW / 2, 0, viewW, viewH);
+                ctx.strokeRect(-viewW / 2, 0, viewW, viewH);
 
-            // Foot block
-            ctx.fillStyle = teamColor;
-            ctx.fillRect(-viewW / 2, footY, viewW, footH);
-            ctx.strokeRect(-viewW / 2, footY, viewW, footH);
+                // 2. Head
+                ctx.beginPath();
+                ctx.arc(0, -size * 0.8, size * 0.7, 0, Math.PI * 2);
+                const headGrad = ctx.createRadialGradient(-2, -size * 1, 1, 0, -size * 0.8, size * 0.7);
+                headGrad.addColorStop(0, teamColor);
+                headGrad.addColorStop(1, '#000');
+                ctx.fillStyle = headGrad;
+                ctx.fill();
+                ctx.stroke();
 
-            // Highlight/Detail - Shoulder/Neck area
-            ctx.fillStyle = 'rgba(255,255,255,0.2)';
-            ctx.fillRect(-viewW / 2, -2, viewW, 4);
+                // 3. Foot/Leg
+                const footLen = size * 1.2;
+                const footY = viewH;
+                const footScaleY = Math.cos(rod.angle);
+                const footH = footLen * footScaleY;
 
-            // Indicator of Chute (Yellow ring, now integrated)
+                ctx.fillStyle = teamColor;
+                ctx.fillRect(-viewW / 2, footY, viewW, footH);
+                ctx.strokeRect(-viewW / 2, footY, viewW, footH);
+            }
+
+            // Indicator of Chute (Yellow ring)
             if (rod.team === 0 && rod.kickCharge > 0) {
                 ctx.beginPath();
                 ctx.arc(0, 0, size * 2, -Math.PI / 2, -Math.PI / 2 + (rod.kickCharge / 100) * (Math.PI * 2));
-                ctx.strokeStyle = 'rgba(255, 255, 0, 0.6)';
-                ctx.lineWidth = 3;
+                ctx.strokeStyle = 'rgba(255, 235, 0, 0.8)';
+                ctx.lineWidth = 4;
                 ctx.stroke();
             }
 
@@ -957,46 +940,78 @@ vibrationToggle.addEventListener('change', saveSettings);
 
 function handleStart(e) {
     if (state.mode !== GSTATE.PLAYING) return;
+
     const rect = canvas.getBoundingClientRect();
-    const touch = e.touches ? e.touches[0] : e;
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
+    const scaleX = state.width / rect.width;
+    const scaleY = state.height / rect.height;
 
-    let bestRod = null;
-    let minDist = 40;
-    rods.forEach(rod => {
-        // In PVP, you can only move your own rods
-        if (state.isPVP) {
-            const myTeam = state.playerRole === 'p1' ? 0 : 1;
-            if (rod.team !== myTeam) return;
-        } else {
-            // In CPU mode, you always control blue (team 0)
-            if (rod.team !== 0) return;
+    // Support multi-touch: check each new touch
+    const touches = e.changedTouches ? e.changedTouches : [e];
+
+    for (let i = 0; i < touches.length; i++) {
+        const touch = touches[i];
+        const x = (touch.clientX - rect.left) * scaleX;
+        const y = (touch.clientY - rect.top) * scaleY;
+
+        let bestRod = null;
+        let minDist = 60; // Increased tolerance for mobile hit area
+
+        rods.forEach(rod => {
+            if (state.isPVP) {
+                const myTeam = state.playerRole === 'p1' ? 0 : 1;
+                if (rod.team !== myTeam) return;
+            } else {
+                if (rod.team !== 0) return;
+            }
+
+            const d = Math.abs(y - rod.y);
+            if (d < minDist) {
+                minDist = d;
+                bestRod = rod;
+            }
+        });
+
+        if (bestRod) {
+            state.draggedRod = bestRod;
+            state.dragOffsetX = bestRod.currentX - x;
+            state.activeRodTouchId = touch.identifier ?? 'mouse';
+            // If we found a rod, we don't need to check other touches for rods in this frame
+            break;
         }
-
-        const d = Math.abs(y - rod.y);
-        if (d < minDist) {
-            minDist = d;
-            bestRod = rod;
-        }
-    });
-
-    if (bestRod) {
-        state.draggedRod = bestRod;
-        state.dragOffsetX = bestRod.currentX - x;
     }
 }
 
 function handleMove(e) {
     if (!state.draggedRod) return;
+
     const rect = canvas.getBoundingClientRect();
-    const touch = e.touches ? e.touches[0] : e;
-    const x = touch.clientX - rect.left;
-    state.draggedRod.currentX = x + state.dragOffsetX;
+    const scaleX = state.width / rect.width;
+
+    const touches = e.changedTouches ? e.changedTouches : [e];
+    for (let i = 0; i < touches.length; i++) {
+        const touch = touches[i];
+        const id = touch.identifier ?? 'mouse';
+
+        if (id === state.activeRodTouchId) {
+            const x = (touch.clientX - rect.left) * scaleX;
+            state.draggedRod.currentX = x + state.dragOffsetX;
+            break;
+        }
+    }
 }
 
-function handleEnd() {
-    state.draggedRod = null;
+function handleEnd(e) {
+    const touches = e.changedTouches ? e.changedTouches : [e];
+    for (let i = 0; i < touches.length; i++) {
+        const touch = touches[i];
+        const id = touch.identifier ?? 'mouse';
+
+        if (id === state.activeRodTouchId) {
+            state.draggedRod = null;
+            state.activeRodTouchId = null;
+            break;
+        }
+    }
 }
 
 function startCharging() {
@@ -1022,9 +1037,16 @@ function endCharging() {
 canvas.addEventListener('mousedown', handleStart);
 window.addEventListener('mousemove', handleMove);
 window.addEventListener('mouseup', handleEnd);
-canvas.addEventListener('touchstart', (e) => { e.preventDefault(); handleStart(e); }, { passive: false });
-canvas.addEventListener('touchmove', (e) => { e.preventDefault(); handleMove(e); }, { passive: false });
+canvas.addEventListener('touchstart', (e) => {
+    if (e.cancelable) e.preventDefault();
+    handleStart(e);
+}, { passive: false });
+canvas.addEventListener('touchmove', (e) => {
+    if (e.cancelable) e.preventDefault();
+    handleMove(e);
+}, { passive: false });
 window.addEventListener('touchend', handleEnd);
+window.addEventListener('touchcancel', handleEnd);
 
 kickBtn.addEventListener('mousedown', startCharging);
 kickBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startCharging(); }, { passive: false });

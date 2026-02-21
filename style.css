@@ -34,22 +34,25 @@ body {
 #app {
     width: 100%;
     height: 100%;
-    max-width: 600px;
-    /* Increased from 500px */
+    max-width: 500px;
+    /* Standard portrait table width */
     display: flex;
     flex-direction: column;
     position: relative;
     padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom) 0;
+    background: #0c0f0a;
 }
 
-/* Header & Scoreboard */
+/* Header & Scoreboard - Positioned on the top wood */
 .game-header {
-    padding: 15px 20px;
-    z-index: 10;
+    padding: 20px 30px;
+    z-index: 60;
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 10px;
+    height: 15%;
+    /* Allocated height on top wood */
 }
 
 .header-controls {
@@ -135,30 +138,81 @@ body {
     opacity: 0.3;
 }
 
-/* Game Field Container */
+/* Game Field Container - The central 'hole' */
 #game-container {
-    flex: 1;
-    position: relative;
+    position: absolute;
+    top: 20%;
+    /* Top wood ends around here */
+    bottom: 25%;
+    /* Bottom wood starts around here */
+    left: 10%;
+    /* Left wood width */
+    right: 10%;
+    /* Right wood width */
+    background: #0c0f0a;
+    z-index: 10;
+    box-shadow: inset 0 0 50px rgba(0, 0, 0, 1);
+    overflow: hidden;
     display: flex;
     align-items: center;
     justify-content: center;
-    margin: 10px;
-    border-radius: 12px;
-    overflow: hidden;
-    background: #000;
-    box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.5);
+}
+
+#gameCanvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+    object-fit: fill;
+}
+
+.table-frame-overlay {
+    position: absolute;
+    inset: 0;
+    background-image: url('./tableframe.png');
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
+    pointer-events: none;
+    z-index: 50;
+    /* Above the field, below the UI buttons */
 }
 
 /* Mobile Optimizations */
-@media (max-width: 450px) {
+@media (max-width: 500px) {
+    #app {
+        max-width: none;
+        height: 100vh;
+        height: 100dvh;
+    }
+
     #game-container {
-        margin: 5px;
-        border-radius: 4px;
-        position: relative;
+        left: 8%;
+        /* Thinner side wood on mobile */
+        right: 8%;
+        top: 22%;
+        bottom: 26%;
     }
 
     .game-header {
-        padding: 5px 15px;
+        top: 8%;
+    }
+
+    .game-controls {
+        bottom: 8%;
+    }
+}
+
+@media (max-width: 450px) {
+    #game-container {
+        margin: 40px 20px;
+        position: relative;
+    }
+
+    .table-frame-overlay {
+        top: -38px;
+        left: -28px;
+        right: -28px;
+        bottom: -38px;
     }
 
     .game-controls {
@@ -239,24 +293,22 @@ body {
     }
 }
 
-canvas {
-    display: block;
-    max-width: 100%;
-    max-height: 100%;
-    border-radius: 8px;
-}
-
 /* Controls & Footer */
+/* Footer / Controls - Positioned on the bottom wood */
 .game-controls {
-    padding: 20px;
+    padding: 10px 30px 30px;
+    min-height: 180px;
     display: flex;
     flex-direction: column;
-    gap: 15px;
-    z-index: 10;
+    justify-content: center;
+    z-index: 60;
+    position: relative;
 }
 
 .force-meter-container {
     flex: 1;
+    max-width: 250px;
+    margin: 0 auto;
 }
 
 .footer-main-row {
